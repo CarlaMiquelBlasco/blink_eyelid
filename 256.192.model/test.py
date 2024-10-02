@@ -11,7 +11,7 @@ from tqdm import tqdm
 import argparse
 
 
-os.environ["CUDA_VISIBLE_DEVICES"]="2"
+## os.environ["CUDA_VISIBLE_DEVICES"]="2"
 
 def csv_collator(samples):
     sample = samples[0]
@@ -28,11 +28,19 @@ def csv_collator(samples):
       blink_label.append(sample[2])
     blink_labels=torch.stack(blink_label)
     return imgs,eye_poses,blink_labels
+
 def main(args):   # create model
+## GPU IF AVAILABLE:
+  if torch.backends.mps.is_available():
+    device = torch.device("mps")
+    print("gpu")
+  else:
+    print("cpu")
+    device = torch.device("cpu")
   atten_generator = atten_net.__dict__[cfg.model](cfg.output_shape, cfg.num_class, cfg)
-  atten_generator = torch.nn.DataParallel(atten_generator,device_ids = [0])
-  blink_eyelid_net = BlinkEyelidNet(cfg)
-  blink_eyelid_net = torch.nn.DataParallel(blink_eyelid_net,device_ids = [0])
+  atten_generator = torch.nn.DataParallel(atten_generator,device_ids = [0]).to(device)
+  blink_eyelid_net = BlinkEyelidNet(cfg).to(device)
+  blink_eyelid_net = torch.nn.DataParallel(blink_eyelid_net,device_ids = [0]).to(device)
 
   cfg.eye = args.eye_type
   test_loader = torch.utils.data.DataLoader(
@@ -60,16 +68,16 @@ def main(args):   # create model
   for i, (inputs, pos, blink_label) in enumerate(tqdm(test_loader)):
       
       with torch.no_grad():
-          input_var = torch.autograd.Variable(inputs.cuda())
+          input_var = torch.autograd.Variable(inputs.to(device)) ## torch.autograd.Variable(inputs.cuda())
 
           global_outputs, refine_output = atten_generator(input_var)  # refineout:(b*t, 2, 64, 48)
 
           height = np.int64(0.4*refine_output.shape[2])*4 # height = 100
           width = height
           if args.eye_type == 'right':
-            outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[1])
+            outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[1], device)
           else:
-            outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[0])
+            outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[0], device)
 
           _, predicted = torch.max(outputs.data, 1)
           predict=predicted.data.cpu().numpy()

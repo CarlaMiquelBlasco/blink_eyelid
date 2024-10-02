@@ -36,7 +36,7 @@ class BlinkEyelidNet(nn.Module):
                 m.bias.data.zero_()
 
 
-    def forward(self, image, height, width, pos, heatmap, phase='train'):
+    def forward(self, image, height, width, pos, heatmap, device, phase='train'):
         datatemp = []
         img_height = image.shape[2]
         img_width = image.shape[3]
@@ -44,9 +44,9 @@ class BlinkEyelidNet(nn.Module):
         bbox = np.int64(pos)
         bbox[:, 0] = np.int64(bbox[:, 0] - height * 0.5)
         bbox[:, 1] = np.int64(bbox[:, 1] - width * 0.5)
-        image = image.cuda()
+        image = image.to(device)
 
-        heatall = heatall.cuda()
+        heatall = heatall.to(device)
         for img, bb, heat in zip(image, bbox, heatall):
 
             heat = torch.sigmoid(heat)
@@ -61,7 +61,7 @@ class BlinkEyelidNet(nn.Module):
             img_process = img_temp[:, bb[1]:bb[1] + height, bb[0]:bb[0] + width]
             datatemp.append(img_process)
 
-        x = torch.stack(datatemp).cuda()
+        x = torch.stack(datatemp).to(device) ## .cuda()
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)

@@ -13,7 +13,7 @@ class Config:
     cur_dir = os.path.dirname(os.path.abspath(__file__))
     this_dir_name = cur_dir.split('/')[-1]
     root_dir = os.path.join(cur_dir, '..')
-    data_dir = "/data/data1/zengwenzheng/HUST_LEBW/TIFS2023_release/HUST_LEBW/"  
+    data_dir = "/Users/carlamiquelblasco/Desktop/NONMANUAL/blink_eyelid/Data"
     model = 'CPN18'
 
     lr = 5e-4
