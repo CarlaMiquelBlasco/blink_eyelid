@@ -50,9 +50,9 @@ def main(args):   # create model
 
   checkpoint_file = os.path.join(args.checkpoint_dir, args.eye_type, 'atten_generator.pth.tar')
   checkpoint_file2 = os.path.join(args.checkpoint_dir, args.eye_type, 'blink_eyelid_net.pth.tar')
-  checkpoint = torch.load(checkpoint_file)
+  checkpoint = torch.load(checkpoint_file, map_location=torch.device('cpu')) ## ## Added map_location=torch.device('cpu'). Necessary if doesn't have CUDA
   atten_generator.load_state_dict(checkpoint['state_dict'])
-  checkpoint2 = torch.load(checkpoint_file2)
+  checkpoint2 = torch.load(checkpoint_file2, map_location=torch.device('cpu')) ## Added map_location=torch.device('cpu'). Necessary if doesn't have CUDA
   blink_eyelid_net.load_state_dict(checkpoint2['state_dict'])
   print("=> loaded checkpoint '{}'".format(checkpoint_file))
 
@@ -101,10 +101,10 @@ def main(args):   # create model
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='configs')
-    parser.add_argument('-e', '--eye_type', default='left', type=str, metavar='N',
+    parser.add_argument('-e', '--eye_type', default='right', type=str, metavar='N',
                         help='left or right eye (in image)')
     parser.add_argument('-c', '--checkpoint_dir', default='./pretrained_models',type=str, metavar='PATH',
                         help='path to load checkpoint (default: checkpoint)')
     args = parser.parse_args()
-    os.chdir('256.192.model')
+    os.chdir('/Users/carlamiquelblasco/Desktop/MASTER BERGEN/Q1/NONMANUAL/BLINK_EYELID/blink_eyelid/256.192.model')
     main(args)
