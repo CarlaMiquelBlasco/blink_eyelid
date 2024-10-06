@@ -36,7 +36,7 @@ Here we provide a pre-processed version of [HUST-LEBW](https://drive.google.com/
 * Run `test.py` for inference and evaluation. Remember to change the dataset path into yours.
 
   ```bash
-  python 256.192.model/test.py
+  python 256.192.model/test_10.py
   ```
 
   **Note:** In the HUST-LEBW benchmark, "left eye" refers to the eye on the left side of the image, rather than the actual left eye. Similarly, "right eye" refers to the eye on the right side of the image, which is mirror-symmetric to our actual eye.
