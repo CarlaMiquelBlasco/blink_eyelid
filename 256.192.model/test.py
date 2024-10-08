@@ -14,6 +14,9 @@ def csv_collator(samples):
     sample = samples[0]
     imgs = sample[0]
     eye_poses = sample[1]
+    #blink_label=[]
+    #blink_label.append(sample[2])
+    #print(sample)
     for i in range(1, len(samples)):
         sample = samples[i]
         img = sample[0]
@@ -30,9 +33,14 @@ def main(args):
         print("cpu")
         device = torch.device("cpu")
 
+    # initialize the model with the provided parameters, and assigns it to atten_generator
+    ## Default parameters: model=CPN18 // output_shape=(64, 48) // num_class=2
     atten_generator = atten_net.__dict__[cfg.model](cfg.output_shape, cfg.num_class, cfg)
+    ## wraps the atten_generator model with torch.nn.DataParallel, which allows it to be parallelized over multiple GPUs if available (not in mac)
     atten_generator = torch.nn.DataParallel(atten_generator, device_ids=[0]).to(device)
+    # Initializes another model, blink_eyelid_net, by creating an instance of the BlinkEyelidNet class. Parameters set in configuration
     blink_eyelid_net = BlinkEyelidNet(cfg).to(device)
+    ## wraps the atten_generator model with torch.nn.DataParallel, which allows it to be parallelized over multiple GPUs if available (not in mac)
     blink_eyelid_net = torch.nn.DataParallel(blink_eyelid_net, device_ids=[0]).to(device)
 
     cfg.eye = args.eye_type
@@ -55,7 +63,7 @@ def main(args):
 
     for i, (inputs, pos) in enumerate(tqdm(test_loader)):
         with torch.no_grad():
-            input_var = torch.autograd.Variable(inputs.to(device))
+            input_var = torch.autograd.Variable(inputs.to(device).unsqueeze(0))
            # print("inputs: ", inputs)
             global_outputs, refine_output = atten_generator(input_var)
 
@@ -64,7 +72,7 @@ def main(args):
             #print("-"*100)
             #print("pos.numpy()", pos.numpy())
             #print("-"*100)
-
+            #print(pos.numpy())
             if args.eye_type == 'right':
                 outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[1], device)
             else:

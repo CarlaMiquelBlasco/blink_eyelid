@@ -42,26 +42,22 @@ class BlinkEyelidNet(nn.Module):
         img_width = image.shape[3]
         heatall = self.upsam(heatmap)
         bbox = np.int64(pos)
-        bbox[:, 0] = np.int64(bbox[:, 0] - height * 0.5)
-        bbox[:, 1] = np.int64(bbox[:, 1] - width * 0.5)
+        bbox[0] = np.int64(bbox[0] - height * 0.5)
+        bbox[1] = np.int64(bbox[1] - width * 0.5)
         image = image.to(device)
 
         heatall = heatall.to(device)
-        for img, bb, heat in zip(image, bbox, heatall):
+        heat = torch.sigmoid(heatall[0])  # Process the single heatmap
+        heat = heat.repeat(3, 1, 1)
+        img = image * heat
+        img_temp = torch.zeros(3, img_height + 100, img_width + 100)
+        img_temp[:, 50:50 + img_height, 50:50 + img_width] = img
+        img_process = img_temp[:, bbox[1]:bbox[1] + height, bbox[0]:bbox[0] + width]
+        datatemp.append(img_process)
 
-            heat = torch.sigmoid(heat)
-            
-            heat = heat.repeat(3, 1, 1)
-            img = img * heat
-            img_temp = torch.zeros(3, img_height + 100, img_width + 100)  # torch.Size([3, 356, 292])
-            img_temp[:, 50:50 + img_height, 50:50 + img_width] = img
-            bb[0] = 50 + bb[0]  # x --> 192    
-            bb[1] = 50 + bb[1]  # y --> 256
+        x = torch.stack(datatemp).to(device)
 
-            img_process = img_temp[:, bb[1]:bb[1] + height, bb[0]:bb[0] + width]
-            datatemp.append(img_process)
-
-        x = torch.stack(datatemp).to(device) ## .cuda()
+        # CNN layers
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
@@ -74,18 +70,33 @@ class BlinkEyelidNet(nn.Module):
         out = self.bn3(out)
         out = self.relu(out)
         out = self.pool1(out)
-        out = torch.squeeze(out)
-        inputs = out.reshape(-1, self.time_size, 80).transpose(1, 0)
-        feature = inputs[1:10, :, :]
-        differ = feature - inputs[0:9, :, :]
-        inputs = torch.cat((feature, differ), 2)
-        inputs = torch.nn.functional.normalize(inputs, dim=2)
-        outputs, _ = self.lstm(inputs)
-        h_state_1 = outputs[-1]
-        h_state_2 = outputs[-2] 
 
-        h = torch.cat((h_state_1, h_state_2), 1)
+        # Process the image directly
+        out = torch.squeeze(out)  # Remove unnecessary dimensions
 
+        # Normalize the output
+        out = torch.nn.functional.normalize(out, dim=0)
+
+        # Create a "zero-difference" (or could be the same as out) for concatenation
+        zero_diff = torch.zeros_like(out).to(device)
+
+        # Concatenate the feature and zero-difference (or the same feature) to match LSTM's expected input size of 160
+        lstm_input = torch.cat((out, zero_diff), dim=0)  # Resulting in [160]
+
+        # Pass to LSTM
+        lstm_input = lstm_input.unsqueeze(0).unsqueeze(1)  # Shape becomes [1, 1, 160]
+
+        # Now LSTM will expect input size of 160
+        outputs, _ = self.lstm(lstm_input)
+
+        # Get the last hidden state from the LSTM (only one since sequence length = 1)
+        h_state_1 = outputs[-1]  # Last hidden state (shape: [1, 128])
+
+        # Since there's no second hidden state, you only pass h_state_1 (size: [1, 128])
+        # To match the 256 size expected by fc6, we can replicate h_state_1
+        h = torch.cat((h_state_1, h_state_1), dim=1)  # Shape [1, 256]
+
+        # Final classification
         logits = self.fc6(h)
 
         return logits, h

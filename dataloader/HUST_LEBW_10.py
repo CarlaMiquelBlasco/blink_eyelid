@@ -37,15 +37,6 @@ class HUST_LEBW(data.Dataset):
         self.blink_gt_path = os.path.join(self.img_folder, 'check', f'gt_blink_{self.eye}.txt')
         self.non_blink_gt_path = os.path.join(self.img_folder, 'check', f'gt_non_blink_{self.eye}.txt')
 
-        ## Read images path:
-        self.image_files = sorted(
-            [os.path.join('check', 'images_input_test', re.sub(r'face', '', f))
-             for f in os.listdir(os.path.join(self.img_folder, 'check', 'images_input_test'))
-             if f.endswith('.bmp')],
-            key=lambda x: int(re.search(r'\d+', x).group(0))
-        )
-        #print("image files: ", len(self.image_files))
-
         with open(self.blink_gt_path, "r") as blink_file:
             blink = blink_file.readlines()
 
@@ -78,9 +69,12 @@ class HUST_LEBW(data.Dataset):
     def __getitem__(self, index):
         image_name = self.anno[index].strip(' \r\n')
         image_path = image_name.split(' ') ## same as self.image_files
+        #print(image_path)
         images = [] ## input for the test model
         eye_poses = []
         blink_label = torch.tensor(int(image_path[0])) ## GT for each image
+        #print()
+       # print(blink_label)
         pos_path=image_path[1].split('/')
 
         ## for each image hi ha un .txt que indica la posicio relativa de l'ull
@@ -120,7 +114,8 @@ class HUST_LEBW(data.Dataset):
 
         imgs = torch.stack(images)
         eyeposes = torch.stack(eye_poses)
-
+        print(imgs.shape)
+        print(eyeposes.shape)
         return imgs, eyeposes, blink_label
 
     def __len__(self):

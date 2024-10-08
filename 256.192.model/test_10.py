@@ -37,6 +37,7 @@ def main(args):   # create model
   else:
     print("cpu")
     device = torch.device("cpu")
+
   atten_generator = atten_net.__dict__[cfg.model](cfg.output_shape, cfg.num_class, cfg)
   atten_generator = torch.nn.DataParallel(atten_generator,device_ids = [0]).to(device)
   blink_eyelid_net = BlinkEyelidNet(cfg).to(device)

@@ -22,7 +22,7 @@ class Config:
     num_clusters = 4
     batch_size = 1
     weight_decay = 1e-5
-    time_size = 10
+    time_size = 1
 
     num_class = 2
     root_path = os.path.join(data_dir, 'test')
