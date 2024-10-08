@@ -72,6 +72,7 @@ class HUST_LEBW(data.Dataset):
         img_path = os.path.join(self.img_folder, self.image_files[index])
         img_path = img_path.strip('.bmp')
         img_path = img_path + 'face.bmp'
+        print(img_path)
         image = cv2.imread(img_path)
         if image is None:
             raise RuntimeError(f"Error reading image {img_path}")

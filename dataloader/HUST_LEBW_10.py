@@ -1,19 +1,11 @@
 import os
 import numpy as np
-
 import cv2
-
 import torch
+import re
 import torch.utils.data as data
-from utils.osutils import *
 from utils.imutils import *
 from utils.transforms import *
-import re
-import os
-from .exam import rechecktest
-import torchvision.transforms as transforms
-
-
 
 class HUST_LEBW(data.Dataset):
     def __init__(self, cfg, train=False):
@@ -25,36 +17,39 @@ class HUST_LEBW(data.Dataset):
         self.num_class = cfg.num_class
         self.cfg = cfg
         self.bbox_extend_factor = cfg.bbox_extend_factor
-        if train:
-            self.scale_factor = cfg.scale_factor
-            self.rot_factor = cfg.rot_factor
-            self.symmetry = cfg.symmetry
+        #self.eye = cfg.eye
 
-        ## Either right or left eye.
-        self.eye = cfg.eye
+        # Load and sort image filenames based on the numerical part before "face.bmp"
+        self.image_files = sorted(
+            [f for f in os.listdir(os.path.join(self.img_folder, 'check', 'images_input_test'))
+             if f.endswith('face.bmp')],
+            key=lambda x: int(re.search(r'\d+', x).group(0))
+        )
 
-        ## For gt, only for the metrics. To compare gt with test/train output results.
-        self.blink_gt_path = os.path.join(self.img_folder, 'check', f'gt_blink_{self.eye}.txt')
-        self.non_blink_gt_path = os.path.join(self.img_folder, 'check', f'gt_non_blink_{self.eye}.txt')
+        ## Load GT for computing the metrics afterward. To compare GT with test/train output results.
+        #self.blink_gt_path = os.path.join(self.img_folder, 'check', f'gt_blink_{self.eye}.txt')
+       # self.non_blink_gt_path = os.path.join(self.img_folder, 'check', f'gt_non_blink_{self.eye}.txt')
 
-        with open(self.blink_gt_path, "r") as blink_file:
-            blink = blink_file.readlines()
+        #with open(self.blink_gt_path, "r") as blink_file:
+        #    blink = blink_file.readlines()
 
-        with open(self.non_blink_gt_path, "r") as non_blink_file:
-            non_blink = non_blink_file.readlines()
-        ## anno contains the whole GT (blink + no-blink).
-        self.anno = blink + non_blink
+        #with open(self.non_blink_gt_path, "r") as non_blink_file:
+        #    non_blink = non_blink_file.readlines()
 
-        
+        #self.anno = blink + non_blink
 
+        # Load eye positions
+        eye_pos_path = os.path.join(self.img_folder, 'check/images_input_test', 'eye_pos_relative.txt')
+        with open(eye_pos_path, "r") as pos_file:
+            self.eye_positions = [line.strip().split() for line in pos_file.readlines()]
 
-    def augmentationCropImage(self, img, joints=None):
+        # Ensure that the number of eye positions matches the number of images
+        assert len(self.image_files) == len(self.eye_positions), "Mismatch between images and eye positions"
+
+    def augmentationCropImage(self, img):
         height, width = self.inp_res[0], self.inp_res[1]
-        
         img = cv2.resize(img, (width, height))
-
         return img
-
 
     def data_augmentation(self, img, leftmap, affrat, angle):
 
@@ -66,59 +61,44 @@ class HUST_LEBW(data.Dataset):
 
         return img, left_eye
 
+
     def __getitem__(self, index):
-        image_name = self.anno[index].strip(' \r\n')
-        image_path = image_name.split(' ') ## same as self.image_files
-        #print(image_path)
-        images = [] ## input for the test model
-        eye_poses = []
-        blink_label = torch.tensor(int(image_path[0])) ## GT for each image
-        #print()
-       # print(blink_label)
-        pos_path=image_path[1].split('/')
+        # Ensure index + time_size doesn't exceed the number of available images
+        if index + self.cfg.time_size > len(self.image_files):
+            raise IndexError("End of dataset")
 
-        ## for each image hi ha un .txt que indica la posicio relativa de l'ull
-        with open(self.img_folder + '/check/' + pos_path[1] + '/' + pos_path[2] + '/10/eye_pos_relative.txt',"r") as pos_file:
-            pos = pos_file.readlines()
+        images = []
+        eye_positions = []
 
-        for i in range(1, 11):
-            img_path = os.path.join(self.img_folder, image_path[i])
-            img_path = img_path.strip('.bmp')
-            img_path = img_path+'face.bmp'
+        # Load 10 consecutive images
+        for i in range(index, index + self.cfg.time_size):
+            img_filename = self.image_files[i]
+            img_path = os.path.join(self.img_folder, 'check', 'images_input_test', img_filename)
 
+            # Now load the image
             image = cv2.imread(img_path)
+            if image is None:
+                raise RuntimeError(f"Error reading image {img_path}")
 
-            pos_cur = pos[i - 1].strip(' \n')
-            pos_cur = pos_cur.split(' ')
+            # Get eye position for the current image
+            pos_line = self.eye_positions[i]
+            pos_cur = [float(p) for p in pos_line]
+            eye = 'right' ##Need to modify this
+            eye_pos = [int(pos_cur[3] / image.shape[1] * 192), int(pos_cur[4] / image.shape[0] * 256)] if eye == 'right' else [int(pos_cur[1] / image.shape[1] * 192), int(pos_cur[2] / image.shape[0] * 256)]
 
-            ## Define eye pose depending if it's right or left
-            if self.eye == 'right':
-                eye_pos = torch.tensor([int(float(pos_cur[3]) / image.shape[1] * 192), int(float(pos_cur[4]) / image.shape[0] * 256)])
-            else:
-                 eye_pos = torch.tensor([int(float(pos_cur[1]) / image.shape[1] * 192), int(float(pos_cur[2]) / image.shape[0] * 256)])
-            eye_pos[0] = min(eye_pos[0], 191-50)
-            eye_pos[0] = max(eye_pos[0], 50)
-            eye_pos[1] = min(eye_pos[1], 255 - 50)
-            eye_pos[1] = max(eye_pos[1], 50)
-            eye_poses.append(eye_pos)
-
-            ## Resize image
+            # Preprocess image
             img = self.augmentationCropImage(image)
-
-            img = img[...,::-1].copy()
+            img = img[..., ::-1].copy()  # Convert BGR to RGB
             img = img.astype(np.float32) / 255
             img = im_to_torch(img)
             img = color_normalize(img, self.pixel_means)
 
             images.append(img)
+            eye_positions.append(eye_pos)
 
         imgs = torch.stack(images)
-        eyeposes = torch.stack(eye_poses)
-        print(imgs.shape)
-        print(eyeposes.shape)
-        return imgs, eyeposes, blink_label
+        eye_positions_tensor = torch.tensor(eye_positions)
+        return imgs, eye_positions_tensor
 
     def __len__(self):
-        return len(self.anno)
-
-
+        return len(self.image_files) - self.cfg.time_size + 1
