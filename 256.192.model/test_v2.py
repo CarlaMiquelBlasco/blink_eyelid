@@ -1,0 +1,127 @@
+import os
+import torch
+import torch.nn.parallel
+import torch.optim
+from config import cfg
+from networks import atten_net
+from networks.blink_eyelid_net_orig import BlinkEyelidNet
+import numpy as np
+from tqdm import tqdm
+import argparse
+import csv
+from PIL import Image
+import torchvision.transforms as transforms
+
+
+def read_eye_positions(eye_pos_file):
+    eye_positions = {}
+    with open(eye_pos_file, 'r') as f:
+        for line in f:
+            parts = line.strip().split(',')
+            eye_positions[parts[0]] = np.array([float(p) for p in parts[1:]])
+    return eye_positions
+
+
+def load_image(image_path):
+    image = Image.open(image_path).convert('RGB')
+    transform = transforms.Compose([
+        transforms.Resize((256, 192)),  # resize to model input size
+        transforms.ToTensor()
+    ])
+    return transform(image).unsqueeze(0)  # add batch dimension
+
+
+def main(args):
+    # Device setup
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print("Using CUDA")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        print("Using MPS")
+    else:
+        device = torch.device("cpu")
+        print("Using CPU")
+
+    # Load models
+    atten_generator = atten_net.__dict__[cfg.model](cfg.output_shape, cfg.num_class, cfg)
+    atten_generator = torch.nn.DataParallel(atten_generator, device_ids=[0]).to(device)
+
+    blink_eyelid_net = BlinkEyelidNet(cfg).to(device)
+    blink_eyelid_net = torch.nn.DataParallel(blink_eyelid_net, device_ids=[0]).to(device)
+
+    # Load model checkpoints
+    checkpoint_file = os.path.join(args.checkpoint_dir, args.eye_type, 'atten_generator.pth.tar')
+    checkpoint_file2 = os.path.join(args.checkpoint_dir, args.eye_type, 'blink_eyelid_net.pth.tar')
+
+    atten_generator.load_state_dict(torch.load(checkpoint_file, map_location=device)['state_dict'])
+    blink_eyelid_net.load_state_dict(torch.load(checkpoint_file2, map_location=device)['state_dict'])
+
+    atten_generator.eval()
+    blink_eyelid_net.eval()
+
+    print("Models loaded successfully")
+
+    # Load eye positions from the text file
+    eye_positions = read_eye_positions(args.eye_pos_file)
+
+    # Prepare CSV file for writing predictions
+    csv_file = os.path.join(args.output_dir, 'predictions.csv')
+    with open(csv_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Image', 'Blink Status'])
+
+        # Process images in the folder
+        for image_file in tqdm(os.listdir(args.image_dir)):
+            if image_file.endswith(('.bmp', '.png')):
+                image_path = os.path.join(args.image_dir, image_file)
+                inputs = load_image(image_path).to(device)
+                eye_pos = torch.tensor(eye_positions.get(image_file, [0, 0, 0, 0])).unsqueeze(0).to(device)
+
+                with torch.no_grad():
+                    global_outputs, refine_output = atten_generator(inputs)
+
+                    height = int(0.4 * refine_output.shape[2]) * 4  # height = 100
+                    width = height
+
+                    if args.eye_type == 'right':
+                        outputs, _ = blink_eyelid_net(inputs, height, width, eye_pos.cpu().numpy(),
+                                                      torch.chunk(refine_output, 2, 1)[1])
+                    else:
+                        outputs, _ = blink_eyelid_net(inputs, height, width, eye_pos.cpu().numpy(),
+                                                      torch.chunk(refine_output, 2, 1)[0])
+
+                    _, predicted = torch.max(outputs.data, 1)
+                    predict = predicted.data.cpu().numpy()[0]
+
+                    # Determine blink status
+                    blink_status = 'Blink' if predict == 1 else 'Non-Blink'
+
+                    # Write to CSV
+                    writer.writerow([image_file, blink_status])
+                    print(f"Processed {image_file}: {blink_status}")
+
+    print(f"Predictions saved to {csv_file}")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Blink detection')
+
+    # Optional arguments (with - or --)
+    parser.add_argument('-e', '--eye_type', default='left', type=str, metavar='N',
+                        help='left or right eye (in image)')
+    parser.add_argument('-c', '--checkpoint_dir', default='./pretrained_models', type=str, metavar='PATH',
+                        help='path to load checkpoint (default: checkpoint)')
+
+    # Positional arguments (no - or --)
+    parser.add_argument('images_input_test_full', type=str, help='Directory containing images to process')
+    parser.add_argument('eye_pos_relative_sort.txt', type=str, help='Text file containing eye positions for each image')
+
+    # Optional argument
+    parser.add_argument('--output_dir', type=str, required=True, help='Directory to save the output CSV file')
+
+    # Parse the arguments
+    args = parser.parse_args()
+
+    # Call the main function with parsed arguments
+    main(args)

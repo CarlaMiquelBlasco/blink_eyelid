@@ -68,6 +68,7 @@ class HUST_LEBW(data.Dataset):
             raise IndexError("End of dataset")
 
         images = []
+        original_image_paths = []
         eye_positions = []
 
         # Load 10 consecutive images
@@ -75,10 +76,14 @@ class HUST_LEBW(data.Dataset):
             img_filename = self.image_files[i]
             img_path = os.path.join(self.img_folder, 'check', 'images_input_test', img_filename)
 
+
             # Now load the image
             image = cv2.imread(img_path)
             if image is None:
                 raise RuntimeError(f"Error reading image {img_path}")
+            else:
+                # Store the original image path
+                original_image_paths.append(img_path)
 
             # Get eye position for the current image
             pos_line = self.eye_positions[i]
@@ -98,7 +103,8 @@ class HUST_LEBW(data.Dataset):
 
         imgs = torch.stack(images)
         eye_positions_tensor = torch.tensor(eye_positions)
-        return imgs, eye_positions_tensor
+
+        return imgs, eye_positions_tensor, original_image_paths
 
     def __len__(self):
         return len(self.image_files) - self.cfg.time_size + 1

@@ -9,25 +9,24 @@ from dataloader.HUST_LEBW_10 import HUST_LEBW
 import numpy as np
 from tqdm import tqdm
 import argparse
+import cv2
+from collections import defaultdict
 
 
 ## os.environ["CUDA_VISIBLE_DEVICES"]="2"
 
 def csv_collator(samples):
-    sample = samples[0]
-    imgs=sample[0]
-    eye_poses=sample[1]
+    imgs = samples[0][0]  # The images
+    eye_poses = samples[0][1]  # The eye positions
+    img_paths = samples[0][2]  # The image paths
     #blink_label=[]
     #blink_label.append(sample[2])
-    for i in range(1,len(samples)):
-      sample = samples[i]
-      img=sample[0]
-      eye_pos=sample[1]
-      imgs=torch.cat((imgs,img),0)
-      eye_poses=torch.cat((eye_poses,eye_pos),0)
-      #blink_label.append(sample[2])
-    #blink_labels=torch.stack(blink_label)
-    return imgs,eye_poses
+    for i in range(1, len(samples)):
+        imgs = torch.cat((imgs, samples[i][0]), 0)  # Concatenate the images
+        eye_poses = torch.cat((eye_poses, samples[i][1]), 0)  # Concatenate the eye positions
+        img_paths.extend(samples[i][2])  # Append the image paths
+
+    return imgs, eye_poses, img_paths  # Return all three
 
 def main(args):
     # Device setup remains unchanged
@@ -50,6 +49,7 @@ def main(args):
         HUST_LEBW(cfg, train=False),
         batch_size=1, shuffle=False,
         num_workers=1, pin_memory=True, collate_fn=csv_collator, drop_last=False)
+    print(len(test_loader))
 
     # Load model checkpoints as before
     checkpoint_file = os.path.join(args.checkpoint_dir, args.eye_type, 'atten_generator.pth.tar')
@@ -61,11 +61,21 @@ def main(args):
     atten_generator.eval()
     blink_eyelid_net.eval()
 
-    predictions = np.zeros(len(test_loader.dataset) + cfg.time_size - 1)
+    # Dictionary to store all predictions for each image index
+    predictions_dict = defaultdict(list)
+
+    # Create an array to store the maximum prediction for each image
+    num_images = len(test_loader.dataset) + cfg.time_size - 1
+    predictions = np.zeros(num_images, dtype=int)
+
+    # Dictionary to store the eye positions and image paths for each image
+    eye_positions_dict = defaultdict(lambda: None)  # Default to None
+    image_paths_dict = defaultdict(lambda: None)  # Default to None
 
     print('testing...')
 
-    for i, (inputs, pos) in enumerate(tqdm(test_loader)):
+    for i, (inputs, pos, img_paths) in enumerate(tqdm(test_loader)):
+        print(inputs.shape)
         with torch.no_grad():
             input_var = torch.autograd.Variable(inputs.to(device))
             global_outputs, refine_output = atten_generator(input_var)
@@ -81,12 +91,36 @@ def main(args):
             _, predicted = torch.max(outputs.data, 1)
             predict = predicted.cpu().numpy()
 
-            # Update predictions (maximum for overlapping windows)
+            #Update predictions and store eye positions and image paths
             for j in range(len(predict)):
-                idx = i + j
-                predictions[idx] = max(predictions[idx], predict[j])
+                img_index = i + j
+                predictions_dict[img_index].append(predict[j])  # Store all predictions for this image
 
-    print(f'Final predictions: {predictions}')
+                # Only update image paths and eye positions if they aren't already set
+                if image_paths_dict[img_index] is None:
+                    eye_positions_dict[img_index] = pos[j].cpu().numpy()
+                    image_paths_dict[img_index] = img_paths[j]
+
+    # Output the final predictions, images, and eye positions
+    for img_index in range(num_images):
+        if image_paths_dict[img_index] is not None:
+            # Apply majority voting
+            prediction_list = predictions_dict[img_index]
+            final_prediction = 1 if prediction_list.count(1) > prediction_list.count(0) else 0
+
+            print(f"Image: {image_paths_dict[img_index]}")
+            print(f"Final Prediction: {'Blink' if final_prediction == 1 else 'No Blink'}")
+            print(f"Eye Position: {eye_positions_dict[img_index]}")
+
+        # Optionally, display the image using OpenCV
+        #image = cv2.imread(image_paths_dict[img_index])
+        #if image is not None:
+        #    cv2.imshow(f"Image {img_index}", image)
+        #    cv2.waitKey(0)  # Wait until a key is pressed before continuing
+
+    print('Testing complete.')
+
+    #print(f'Final predictions: {predictions}')
           #target=blink_label.data.numpy()
           #for (pre,tar) in zip(predict,target):
 
