@@ -9,6 +9,7 @@ from dataloader.HUST_LEBW_orig import HUST_LEBW
 import numpy as np
 from tqdm import tqdm
 import argparse
+import csv
 
 
 #os.environ["CUDA_VISIBLE_DEVICES"]="2"
@@ -67,40 +68,46 @@ def main(args):
     #unblink_count = 0
     #blink_right = 0
     #unblink_right = 0
+    # Open a CSV file for writing the predictions
+    with open('predictions.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Path', 'Prediction'])  # Write CSV header
 
-    for i, (inputs, pos, blink_label) in enumerate(tqdm(test_loader)):
 
-        with torch.no_grad():
-            input_var = torch.autograd.Variable(inputs.to(device))
+        for i, (inputs, pos, blink_label) in enumerate(tqdm(test_loader)):
 
-            global_outputs, refine_output = atten_generator(input_var)  # refineout:(b*t, 2, 64, 48)
+            with torch.no_grad():
+                input_var = torch.autograd.Variable(inputs.to(device))
 
-            height = np.int64(0.4*refine_output.shape[2])*4 # height = 100
-            width = height
-            if args.eye_type == 'right':
-                outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[1], device)
-            else:
-                outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[0], device)
+                global_outputs, refine_output = atten_generator(input_var)  # refineout:(b*t, 2, 64, 48)
 
-            _, predicted = torch.max(outputs.data, 1)
-            predict=predicted.data.cpu().numpy()
-            print(f"predict: {predict}")
-            #target=blink_label.data.numpy()
-            #for (pre,tar) in zip(predict,target):
+                height = np.int64(0.4*refine_output.shape[2])*4 # height = 100
+                width = height
+                if args.eye_type == 'right':
+                    outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[1], device)
+                else:
+                    outputs, b = blink_eyelid_net(input_var, height, width, pos.numpy(), torch.chunk(refine_output, 2, 1)[0], device)
 
-            #    if (abs(tar-1)<1e-5):
-            #      blink_count+=1
-            #      if (abs(pre-1)<1e-5):
-            #          blink_right+=1
-            #    else :
-            #      unblink_count+=1
-            #      if (abs(pre-0)<1e-5):
-            #          unblink_right+=1
+                _, predicted = torch.max(outputs.data, 1)
+                predict=predicted.data.cpu().numpy()
+                print(f"path {i+1}, prediction: {predict}")
+                writer.writerow([f"path {i+1}", predict[0]])
+                #target=blink_label.data.numpy()
+                #for (pre,tar) in zip(predict,target):
 
-    #Recall=blink_right/(blink_count)
-    #Precision=blink_right/(blink_right+unblink_count-unblink_right)
-    #F1=2.0/(1.0/Recall+1.0/Precision)
-    #print(f'{args.eye_type} eye: F1 = {F1}')
+                #    if (abs(tar-1)<1e-5):
+                #      blink_count+=1
+                #      if (abs(pre-1)<1e-5):
+                #          blink_right+=1
+                #    else :
+                #      unblink_count+=1
+                #      if (abs(pre-0)<1e-5):
+                #          unblink_right+=1
+
+        #Recall=blink_right/(blink_count)
+        #Precision=blink_right/(blink_right+unblink_count-unblink_right)
+        #F1=2.0/(1.0/Recall+1.0/Precision)
+        #print(f'{args.eye_type} eye: F1 = {F1}')
 
 
 if __name__ == '__main__':

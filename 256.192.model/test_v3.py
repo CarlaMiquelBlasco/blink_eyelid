@@ -15,7 +15,7 @@ def read_eye_positions(eye_pos_file):
     eye_positions = {}
     with open(eye_pos_file, 'r') as f:
         for line in f:
-            parts = line.strip().split(',')
+            parts = line.strip().split(' ')
             eye_positions[parts[0]] = np.array([float(p) for p in parts[1:]])
     return eye_positions
 
@@ -31,9 +31,9 @@ def main():
     # Hardcoded paths (modify these as per your requirements)
     eye_type = 'left'  # or 'right' depending on the eye being processed
     checkpoint_dir = './pretrained_models'  # path to the folder with checkpoints
-    image_dir = '/path/to/images'  # folder where images are stored
-    eye_pos_file = '/path/to/eye_positions.txt'  # file containing eye positions
-    output_dir = '/path/to/output'  # folder where CSV will be saved
+    image_dir =  os.path.join(os.pardir, 'Video/face_frames')  # folder where images are stored
+    eye_pos_file = os.path.join(os.pardir,'Video/face_frames/eye_pos_relative.txt')  # file containing eye positions
+    output_dir = os.path.join(os.pardir,'Metrics/predictions')  # folder where CSV will be saved
 
     # Device setup
     if torch.cuda.is_available():
@@ -89,9 +89,9 @@ def main():
                     width = height
 
                     if eye_type == 'right':
-                        outputs, _ = blink_eyelid_net(inputs, height, width, eye_pos.cpu().numpy(), torch.chunk(refine_output, 2, 1)[1])
+                        outputs, _ = blink_eyelid_net(inputs, height, width, eye_pos.cpu().numpy(), torch.chunk(refine_output, 2, 1)[1], device)
                     else:
-                        outputs, _ = blink_eyelid_net(inputs, height, width, eye_pos.cpu().numpy(), torch.chunk(refine_output, 2, 1)[0])
+                        outputs, _ = blink_eyelid_net(inputs, height, width, eye_pos.cpu().numpy(), torch.chunk(refine_output, 2, 1)[0], device)
 
                     _, predicted = torch.max(outputs.data, 1)
                     predict = predicted.data.cpu().numpy()[0]
