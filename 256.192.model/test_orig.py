@@ -69,7 +69,7 @@ def main(args):
     #blink_right = 0
     #unblink_right = 0
     # Open a CSV file for writing the predictions
-    with open('predictions.csv', mode='w', newline='') as file:
+    with open('../Metrics/predictions/predictions_v2.csv', mode='w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(['Path', 'Prediction'])  # Write CSV header
 
@@ -91,7 +91,9 @@ def main(args):
                 _, predicted = torch.max(outputs.data, 1)
                 predict=predicted.data.cpu().numpy()
                 print(f"path {i+1}, prediction: {predict}")
-                writer.writerow([f"path {i+1}", predict[0]])
+                # Write the same prediction for every image in the folder
+                for j in range(10):
+                    writer.writerow([f"path {i+j+1}", predict[0]])
                 #target=blink_label.data.numpy()
                 #for (pre,tar) in zip(predict,target):
 
